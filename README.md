@@ -14,6 +14,8 @@
 [![Feishu](https://img.shields.io/badge/Feishu-Group-E9DBFC?style=flat&logo=wechat&logoColor=white)](./COMMUNICATION.md) 
 [![WeChat](https://img.shields.io/badge/WeChat-Group-C5EAB4?style=flat&logo=wechat&logoColor=white)](./COMMUNICATION.md)
 
+| ⚡ **Fast - Lightning Tool Retrieval** &nbsp;|&nbsp; 📈 **Self-Evolving Tool Orchestration** &nbsp;|&nbsp; ⚡ **Universal Tool Automation** |
+
 </div>
 
 ## 🎯 What is AnyTool?
@@ -27,12 +29,12 @@ AnyTool is a **Universal Tool-Use Layer** that transforms how AI agents interact
 
 - **Zero-Waste Processing**: Pre-computed embeddings and lazy initialization eliminate redundant processing - tools are instantly ready across all executions.
 
-📈 **Scalable - Self-Evolving Tool Intelligence**
+📈 **Scalable - Self-Evolving Tool Orchestration**
 - **Adaptive MCP Tool Selection**: Smart caching and selective re-indexing maintain constant performance from 10 to 10,000 tools with optimal resource usage.
   
 - **Self-Evolving Tool Optimization**: System continuously improves through persistent memory, becoming more efficient as your tool ecosystem expands.
 
-🌍 **Powerful - Universal Automation**
+🌍 **Powerful - Universal Tool Automation**
 - **Quality-Aware Selection**: Built-in reliability tracking and safety controls deliver production-ready automation through persistent learning and execution safeguards.
 
 - **Universal Tool-Use Capability**: Multi-backend architecture seamlessly extends beyond web APIs to system operations, GUI automation, and deep research through unified interface.
