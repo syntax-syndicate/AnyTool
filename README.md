@@ -122,6 +122,13 @@ pip install python-xlib pyatspi numpy
 # Install system packages
 sudo apt install at-spi2-core python3-tk scrot
 ```
+
+> [!NOTE]
+> **Optional dependencies:**
+> - Accessibility: `pyatspi` + `at-spi2-core`
+> - Window management: `wmctrl`
+> - Cursor in screenshots: `libx11-dev` + `libxfixes-dev`
+
 </details>
 
 <details>
