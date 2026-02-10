@@ -31,7 +31,7 @@
   },
   "tool_search": {
     "embedding_model": "BAAI/bge-small-en-v1.5",
-    "max_tools": 20,
+    "max_tools": 40,
     "search_mode": "hybrid",
     "enable_llm_filter": true,
     "llm_filter_threshold": 50,

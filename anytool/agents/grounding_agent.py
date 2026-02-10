@@ -70,6 +70,49 @@ class GroundingAgent(BaseAgent):
         if visual_analysis_model:
             logger.info(f"Visual analysis model: {visual_analysis_model}")
     
+    def _truncate_messages(
+        self, 
+        messages: List[Dict[str, Any]], 
+        keep_recent: int = 8,
+        max_tokens_estimate: int = 120000
+    ) -> List[Dict[str, Any]]:
+        if len(messages) <= keep_recent + 2:  # +2 for system and initial user
+            return messages
+        
+        total_text = json.dumps(messages, ensure_ascii=False)
+        estimated_tokens = len(total_text) // 4
+        
+        if estimated_tokens < max_tokens_estimate:
+            return messages
+        
+        logger.info(f"Truncating message history: {len(messages)} messages, "
+                   f"~{estimated_tokens:,} tokens -> keeping recent {keep_recent} rounds")
+        
+        system_messages = []
+        user_instruction = None
+        conversation_messages = []
+        
+        for msg in messages:
+            role = msg.get("role")
+            if role == "system":
+                system_messages.append(msg)
+            elif role == "user" and user_instruction is None:
+                user_instruction = msg
+            else:
+                conversation_messages.append(msg)
+        
+        recent_messages = conversation_messages[-(keep_recent * 2):] if conversation_messages else []
+        
+        truncated = system_messages.copy()
+        if user_instruction:
+            truncated.append(user_instruction)
+        truncated.extend(recent_messages)
+        
+        logger.info(f"After truncation: {len(truncated)} messages, "
+                   f"~{len(json.dumps(truncated, ensure_ascii=False))//4:,} tokens (estimated)")
+        
+        return truncated
+    
     async def process(self, context: Dict[str, Any]) -> Dict[str, Any]:
         """
         Process a task execution request with multi-round iteration control.
@@ -133,6 +176,8 @@ class GroundingAgent(BaseAgent):
         current_iteration = 0
         all_tool_results = []
         iteration_contexts = []
+        consecutive_empty_responses = 0  # Track consecutive empty LLM responses
+        MAX_CONSECUTIVE_EMPTY = 5  # Exit after this many empty responses
         
         # Build initial messages
         messages = self.construct_messages(context)
@@ -141,6 +186,15 @@ class GroundingAgent(BaseAgent):
             while current_iteration < max_iterations:
                 current_iteration += 1
                 logger.info(f"Grounding Agent: Iteration {current_iteration}/{max_iterations}")
+                
+                # Truncate message history to prevent context length issues
+                # Start truncating after 5 iterations to keep context manageable
+                if current_iteration >= 5:
+                    messages = self._truncate_messages(
+                        messages, 
+                        keep_recent=8,  # 保留最近8轮对话
+                        max_tokens_estimate=120000  # Claude Sonnet 4.5 上下文限制是200K，保守使用120K
+                    )
                 
                 messages_input_snapshot = copy.deepcopy(messages)
                 
@@ -187,15 +241,25 @@ class GroundingAgent(BaseAgent):
                 
                 if len(assistant_content) > 0:
                     logger.info(f"Iteration {current_iteration} - Assistant content preview: {repr(assistant_content[:300])}")
+                    consecutive_empty_responses = 0  # Reset counter on valid response
                 else:
                     if not has_tool_calls:
-                        logger.warning(f"Iteration {current_iteration} - NO tool calls and NO content (potential infinite loop)")
+                        consecutive_empty_responses += 1
+                        logger.warning(f"Iteration {current_iteration} - NO tool calls and NO content "
+                                     f"(empty response {consecutive_empty_responses}/{MAX_CONSECUTIVE_EMPTY})")
+                        
+                        if consecutive_empty_responses >= MAX_CONSECUTIVE_EMPTY:
+                            logger.error(f"Exiting due to {MAX_CONSECUTIVE_EMPTY} consecutive empty LLM responses. "
+                                       "This may indicate API issues, rate limiting, or context too long.")
+                            break
+                    else:
+                        consecutive_empty_responses = 0  # Reset if we have tool calls
                 
                 # Snapshot messages after LLM call (accumulated context)
                 messages_output_snapshot = copy.deepcopy(messages)
                 
                 # Record iteration context
-                iteration_contexts.append({
+                iteration_context = {
                     "iteration": current_iteration,
                     "messages_input": messages_input_snapshot,
                     "messages_output": messages_output_snapshot,
@@ -205,7 +269,17 @@ class GroundingAgent(BaseAgent):
                         # "iteration_summary": llm_summary,  # Disabled with iteration summary
                         "tool_calls_count": len(tool_results_this_iteration),
                     },
-                })
+                }
+                iteration_contexts.append(iteration_context)
+                
+                # Real-time save to conversations.jsonl
+                from anytool.recording import RecordingManager
+                await RecordingManager.record_iteration_context(
+                    iteration=current_iteration,
+                    messages_input=messages_input_snapshot,
+                    messages_output=messages_output_snapshot,
+                    llm_response_summary=iteration_context["llm_response_summary"],
+                )
                 
                 # Check for completion token in assistant content
                 # [DISABLED] Also check in iteration summary when enabled
@@ -508,7 +582,7 @@ class GroundingAgent(BaseAgent):
                 })
 
             # Use dedicated visual analysis model if configured, otherwise use main LLM model
-            visual_model = self._visual_analysis_model or (self._llm_client.model if self._llm_client else "anthropic/claude-sonnet-4-5")
+            visual_model = self._visual_analysis_model or (self._llm_client.model if self._llm_client else "openrouter/anthropic/claude-sonnet-4.5")
             response = await asyncio.wait_for(
                 litellm.acompletion(
                     model=visual_model,

@@ -46,6 +46,9 @@ class MCPProvider(Provider[MCPSession]):
         retry_interval = get_config_value(config, "retry_interval", 2.0)
         check_dependencies = get_config_value(config, "check_dependencies", True)
         auto_install = get_config_value(config, "auto_install", False)
+        # Tool call retry settings (for transient errors like 400, 500, etc.)
+        tool_call_max_retries = get_config_value(config, "tool_call_max_retries", 3)
+        tool_call_retry_delay = get_config_value(config, "tool_call_retry_delay", 1.0)
         
         # Create sandbox options if sandbox is enabled
         sandbox_options = None
@@ -70,6 +73,8 @@ class MCPProvider(Provider[MCPSession]):
             retry_interval=retry_interval,
             installer=installer,
             check_dependencies=check_dependencies,
+            tool_call_max_retries=tool_call_max_retries,
+            tool_call_retry_delay=tool_call_retry_delay,
         )
         
         # Map server name to session for quick lookup
@@ -323,7 +328,11 @@ class MCPProvider(Provider[MCPSession]):
         return tools
     
     async def _list_tools_live(self) -> List[BaseTool]:
-        """List tools by starting all servers (original behavior)."""
+        """List tools by starting all servers.
+        
+        Uses a semaphore to serialize session creation, avoiding TaskGroup race conditions
+        that occur when multiple MCP connections are initialized concurrently.
+        """
         servers = self.list_servers()
         
         if not servers:
@@ -333,23 +342,34 @@ class MCPProvider(Provider[MCPSession]):
         # Find servers that don't have sessions yet
         to_create = [s for s in servers if s not in self._server_sessions]
 
-        # Lazily create missing sessions in parallel
+        # Create missing sessions with serialized execution using semaphore
         if to_create:
-            logger.debug(f"Lazily creating {len(to_create)} MCP sessions")
-            results = await asyncio.gather(
-                *(self._lazy_create(s) for s in to_create),
-                return_exceptions=True
-            )
+            logger.info(f"Creating {len(to_create)} MCP sessions (serialized to avoid race conditions)")
+            
+            # Use semaphore with limit=1 to serialize session creation
+            # This avoids TaskGroup race conditions in concurrent HTTP connection setup
+            semaphore = asyncio.Semaphore(1)
+            
+            async def _create_with_semaphore(server: str):
+                async with semaphore:
+                    logger.debug(f"Creating session for '{server}'")
+                    return await self._lazy_create(server)
+            
+            tasks = [_create_with_semaphore(s) for s in to_create]
+            results = await asyncio.gather(*tasks, return_exceptions=True)
+            
+            # Log errors
             for i, result in enumerate(results):
                 if isinstance(result, MCPDependencyError):
                     logger.debug(f"Dependency error for '{to_create[i]}': {type(result).__name__}")
                 elif isinstance(result, Exception):
-                    logger.error(f"Failed to lazily create session for '{to_create[i]}': {result}")
+                    logger.error(f"Failed to create session for '{to_create[i]}': {result}")
 
         # Aggregate tools from all sessions
         uniq: Dict[tuple[str, str], BaseTool] = {}
         failed_servers = []
         
+        logger.debug(f"Listing tools from {len(self._server_sessions)} sessions")
         for server, sess in self._server_sessions.items():
             try:
                 tools = await sess.list_tools()

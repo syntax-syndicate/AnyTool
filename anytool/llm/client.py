@@ -154,7 +154,7 @@ async def _summarize_tool_result(
     content: str,
     tool_name: str,
     task: str = "",
-    model: str = "anthropic/claude-sonnet-4-5",
+    model: str = "openrouter/anthropic/claude-sonnet-4.5",
     timeout: float = 60.0
 ) -> str:
     """Use LLM to summarize large tool results."""
@@ -212,7 +212,7 @@ async def _tool_result_to_message_async(
     tool_name: str,
     task: str = "",
     summarize_threshold: int = DEFAULT_SUMMARIZE_THRESHOLD_CHARS,
-    summarize_model: str = "anthropic/claude-sonnet-4-5",
+    summarize_model: str = "openrouter/anthropic/claude-sonnet-4.5",
     enable_summarization: bool = True
 ) -> Dict:
     """Convert ToolResult to LLMClient usable message format with LLM summarization for large results.
@@ -318,7 +318,7 @@ class LLMClient:
     """LLMClient class for single round call"""
     def __init__(
         self, 
-        model: str = "anthropic/claude-sonnet-4-5", 
+        model: str = "openrouter/anthropic/claude-sonnet-4.5", 
         enable_thinking: bool = False,
         rate_limit_delay: float = 0.0,
         max_retries: int = 3,

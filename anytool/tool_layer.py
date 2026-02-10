@@ -48,6 +48,7 @@ class AnyToolConfig:
     recording_log_dir: str = "./logs/recordings"
     enable_screenshot: bool = True
     enable_video: bool = True
+    enable_conversation_log: bool = True  # Save LLM conversations to conversations.jsonl
     
     # Logging Configuration
     log_level: str = "INFO"
@@ -94,9 +95,21 @@ class AnyTool:
             )
             logger.info(f"✓ LLM Client: {self.config.llm_model}")
             
+            # Load grounding config
+            # If custom config is provided, merge it with default configs
+            # load_config supports multiple files and deep merges them (later files override earlier ones)
             if self.config.grounding_config_path:
-                grounding_config = load_config(self.config.grounding_config_path)
+                from anytool.config.loader import CONFIG_DIR
+                from anytool.config.constants import CONFIG_GROUNDING, CONFIG_SECURITY
+                # Load default configs + custom config (custom values will override defaults)
+                grounding_config = load_config(
+                    CONFIG_DIR / CONFIG_GROUNDING,
+                    CONFIG_DIR / CONFIG_SECURITY,
+                    self.config.grounding_config_path
+                )
+                logger.info(f"Merged custom grounding config: {self.config.grounding_config_path}")
             else:
+                # Load default configs only
                 grounding_config = get_config()
             
             self._grounding_client = GroundingClient(config=grounding_config)
@@ -114,6 +127,7 @@ class AnyTool:
                     backends=self.config.recording_backends,
                     enable_screenshot=self.config.enable_screenshot,
                     enable_video=self.config.enable_video,
+                    enable_conversation_log=self.config.enable_conversation_log,
                     agent_name="AnyTool",
                 )
                 # Inject recording_manager to grounding_client for GUI intermediate steps
@@ -179,7 +193,20 @@ class AnyTool:
         context: Optional[Dict[str, Any]] = None,
         workspace_dir: Optional[str] = None,
         max_iterations: Optional[int] = None,
+        task_id: Optional[str] = None,
     ) -> Dict[str, Any]:
+        """
+        Execute a task with AnyTool.
+        
+        Args:
+            task: Task instruction
+            context: Additional context
+            workspace_dir: Working directory
+            max_iterations: Max iterations override
+            task_id: External task ID for recording/logging. If None, generates a random one.
+                     This allows external callers (e.g., OSWorld) to specify their own task ID
+                     so recordings can be easily matched with benchmark results.
+        """
         if not self._initialized:
             raise RuntimeError(
                 "AnyTool not initialized. "
@@ -195,7 +222,10 @@ class AnyTool:
         
         self._running = True
         start_time = asyncio.get_event_loop().time()
-        task_id = f"task_{uuid.uuid4().hex[:8]}"
+        # Use external task_id if provided, otherwise generate one
+        if task_id is None:
+            task_id = f"task_{uuid.uuid4().hex[:8]}"
+        logger.info(f"Task ID: {task_id}")
         
         try:
             execution_context = context or {}

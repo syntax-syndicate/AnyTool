@@ -24,6 +24,7 @@ class RecordingManager:
         backends: Optional[List[str]] = None,
         enable_screenshot: bool = True,
         enable_video: bool = False,
+        enable_conversation_log: bool = True,
         auto_save_interval: int = 10,
         server_url: Optional[str] = None,
         agent_name: str = "GroundingAgent",
@@ -39,6 +40,7 @@ class RecordingManager:
                     (optional: "mcp", "gui", "shell", "system", "web")
             enable_screenshot: whether to enable screenshot (through platform.ScreenshotClient)
             enable_video: whether to enable video recording (through platform.RecordingClient)
+            enable_conversation_log: whether to save LLM conversations to conversations.jsonl (default: True)
             auto_save_interval: automatic save interval (steps)
             server_url: local server address (None = read from config/environment variables)
             agent_name: name of the agent performing the recording (default: "GroundingAgent")
@@ -49,6 +51,7 @@ class RecordingManager:
         self.backends = set(backends) if backends else {"mcp", "gui", "shell", "system", "web"}
         self.enable_screenshot = enable_screenshot
         self.enable_video = enable_video
+        self.enable_conversation_log = enable_conversation_log
         self.auto_save_interval = auto_save_interval
         self.server_url = server_url
         self.agent_name = agent_name
@@ -134,6 +137,94 @@ class RecordingManager:
         await instance._recorder.add_metadata("retrieved_tools", metadata)
         
         logger.info(f"Recorded {len(tools)} retrieved tools (with search debug info: {search_debug_info is not None})")
+    
+    @classmethod
+    async def record_iteration_context(
+        cls,
+        iteration: int,
+        messages_input: List[Dict[str, Any]],
+        messages_output: List[Dict[str, Any]],
+        llm_response_summary: Dict[str, Any],
+        max_content_length: int = 5000,
+    ):
+        """
+        Record a single iteration's LLM conversation to conversations.jsonl (real-time).
+        
+        Args:
+            iteration: Iteration number
+            messages_input: Messages sent to LLM
+            messages_output: Messages after LLM response  
+            llm_response_summary: Summary of LLM response
+            max_content_length: Max length for message content truncation
+        """
+        instance = cls._global_instance
+        if not instance or not instance._is_started or not instance._recorder:
+            return
+        
+        # Check if conversation recording is enabled
+        if not getattr(instance, 'enable_conversation_log', True):
+            return
+        
+        def truncate_message_content(messages: List[Dict]) -> List[Dict]:
+            """Truncate message content to avoid huge log files."""
+            result = []
+            for msg in messages:
+                new_msg = {"role": msg.get("role", "unknown")}
+                content = msg.get("content", "")
+                
+                if isinstance(content, str):
+                    if len(content) > max_content_length:
+                        new_msg["content"] = content[:max_content_length] + f"... [truncated, total {len(content)} chars]"
+                    else:
+                        new_msg["content"] = content
+                elif isinstance(content, list):
+                    # Handle multi-part content (e.g., with images)
+                    new_content = []
+                    for item in content:
+                        if isinstance(item, dict):
+                            if item.get("type") == "image":
+                                new_content.append({"type": "image", "note": "[image data omitted]"})
+                            elif item.get("type") == "text":
+                                text = item.get("text", "")
+                                if len(text) > max_content_length:
+                                    new_content.append({
+                                        "type": "text",
+                                        "text": text[:max_content_length] + f"... [truncated, total {len(text)} chars]"
+                                    })
+                                else:
+                                    new_content.append(item)
+                            else:
+                                new_content.append(item)
+                        else:
+                            new_content.append(item)
+                    new_msg["content"] = new_content
+                else:
+                    new_msg["content"] = str(content)[:max_content_length]
+                
+                if "tool_calls" in msg:
+                    new_msg["tool_calls"] = msg["tool_calls"]
+                
+                result.append(new_msg)
+            return result
+        
+        # Build record
+        import datetime
+        record = {
+            "iteration": iteration,
+            "timestamp": datetime.datetime.now().strftime("%Y-%m-%dT%H:%M:%S"),
+            "llm_response_summary": llm_response_summary,
+            "messages_input": truncate_message_content(messages_input),
+            "messages_output": truncate_message_content(messages_output),
+        }
+        
+        # Append to conversations.jsonl (real-time)
+        conv_file = instance._recorder.trajectory_dir / "conversations.jsonl"
+        try:
+            with open(conv_file, "a", encoding="utf-8") as f:
+                f.write(json.dumps(record, ensure_ascii=False))
+                f.write("\n")
+        except Exception as e:
+            logger.debug(f"Failed to write conversation log: {e}")
     
     @classmethod
     async def record_tool_execution(

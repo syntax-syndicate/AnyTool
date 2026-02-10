@@ -68,7 +68,7 @@ class GUIAgentTool(BaseTool):
     async def _arun(
         self,
         task_description: str,
-        max_steps: int = 25,  # Balanced default for most tasks
+        max_steps: int = 50,
     ) -> ToolResult:
         """
         Execute a GUI automation task using LLM planning.

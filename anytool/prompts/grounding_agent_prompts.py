@@ -15,6 +15,12 @@ class GroundingAgentPrompts:
 - Tools execute immediately, results appear in next iteration
 - If you need results to decide next action, wait for next iteration
 
+# Tool Selection Tips
+
+- **MCP tools** and **Shell tools** are typically faster and more accurate when applicable
+- **GUI tools** offer finer-grained control and can handle tasks not covered by MCP/shell tools
+- Choose based on the task requirements and tool availability; prefer MCP/shell when they fit well
+
 # Visual Analysis Control
 
 GUI tools auto-analyze screenshots to extract information.

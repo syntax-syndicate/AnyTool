@@ -35,6 +35,8 @@ async def create_connector_from_config(
     sse_read_timeout: float = 300.0,
     installer: Optional[MCPInstallerManager] = None,
     check_dependencies: bool = True,
+    tool_call_max_retries: int = 3,
+    tool_call_retry_delay: float = 1.0,
 ) -> MCPBaseConnector:
     """Create a connector based on server configuration.
     
@@ -47,6 +49,8 @@ async def create_connector_from_config(
         sse_read_timeout: SSE read timeout in seconds (default: 300.0)
         installer: Optional installer manager for dependency installation
         check_dependencies: Whether to check and install dependencies (default: True)
+        tool_call_max_retries: Maximum number of retries for tool calls (default: 3)
+        tool_call_retry_delay: Initial delay between retries in seconds (default: 1.0)
 
     Returns:
         A configured connector instance
@@ -113,6 +117,8 @@ async def create_connector_from_config(
             auth_token=get_config_value(server_config, "auth_token", None),
             timeout=timeout,
             sse_read_timeout=sse_read_timeout,
+            tool_call_max_retries=tool_call_max_retries,
+            tool_call_retry_delay=tool_call_retry_delay,
         )
 
     # WebSocket connector
