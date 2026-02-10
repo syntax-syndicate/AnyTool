@@ -239,20 +239,20 @@ asyncio.run(main())
 
 #### **Technical Innovation:**<br>
 **🎯 Quality-Aware Tool Selection**
-- **📝 Description Quality Check**: LLM-based evaluation of MCP tool description clarity and completeness.
-- **📈 Performance-Based Ranking**: Track call/success rates for each MCP tool in persistent memory to prioritize reliable options.
+- **Description Quality Check**: LLM-based evaluation of MCP tool description clarity and completeness.
+- **Performance-Based Ranking**: Track call/success rates for each MCP tool in persistent memory to prioritize reliable options.
 
 **💾 Learning-Based Tool Memory**
-- **🧠 Track Tool Performance**: Remember which MCP tools work well and which fail over time.
-- **⚡ Smart Tool Prioritization**: Automatically rank tools based on past success rates and description quality.
+- **Track Tool Performance**: Remember which MCP tools work well and which fail over time.
+- **Smart Tool Prioritization**: Automatically rank tools based on past success rates and description quality.
 
 **🛡️ Safety-First Execution**
-- **🚫 Block Dangerous Operations**: Prevent arbitrary code execution and require user approval for sensitive MCP tool operations.
-- **🔒 Execution Safeguards**: Built-in safety controls for all MCP tool executions.
+- **Block Dangerous Operations**: Prevent arbitrary code execution and require user approval for sensitive MCP tool operations.
+- **Execution Safeguards**: Built-in safety controls for all MCP tool executions.
 
 **🚀 Self-Healing Tool Management**
-- **🎯 Autonomous Tool Switching**: Switch failed MCP tools locally without restarting expensive planning loops.
-- **🔄 Local Failure Recovery**: Automatically switch to alternative MCP tools on failure without escalating to upper-level agents.
+- **Autonomous Tool Switching**: Switch failed MCP tools locally without restarting expensive planning loops.
+- **Local Failure Recovery**: Automatically switch to alternative MCP tools on failure without escalating to upper-level agents.
   
 ---
 
@@ -385,6 +385,10 @@ config = AnyToolConfig(
     llm_rate_limit_delay=0.0,
     llm_kwargs={},  # Additional LiteLLM parameters
     
+    # Separate models for specific tasks (None = use llm_model)
+    tool_retrieval_model=None,   # Model for tool retrieval LLM filter
+    visual_analysis_model=None,  # Model for visual analysis
+    
     # Grounding Configuration
     grounding_config_path=None,  # Path to custom config file
     grounding_max_iterations=20,
@@ -402,6 +406,7 @@ config = AnyToolConfig(
     recording_log_dir="./logs/recordings",
     enable_screenshot=True,
     enable_video=True,
+    enable_conversation_log=True,  # Save LLM conversations to conversations.jsonl
     
     # Logging Configuration
     log_level="INFO",
@@ -411,6 +416,8 @@ config = AnyToolConfig(
 
 async with AnyTool(config=config) as tool_layer:
     result = await tool_layer.execute("Your task here")
+    # Or with external task_id for benchmark integration:
+    # result = await tool_layer.execute("Your task", task_id="my-task-001")
 ```
 
 </details>
@@ -441,7 +448,7 @@ async with AnyTool(config=config) as tool_layer:
 | | `sandbox` | Run in E2B sandbox | `true` or `false` (default: `false`) |
 | | `eager_sessions` | Pre-connect all servers at startup | `true` or `false` (default: `false`, lazy connection) |
 | **tool_search** | `search_mode` | Tool retrieval strategy | `"semantic"`, `"hybrid"` (semantic + LLM filter), or `"llm"` (default: `"hybrid"`) |
-| | `max_tools` | Maximum tools to return from search | Any integer (default: `20`) |
+| | `max_tools` | Maximum tools to return from search | Any integer (default: `40`) |
 | | `enable_llm_filter` | Enable LLM-based tool pre-filtering | `true` or `false` (default: `true`) |
 | | `llm_filter_threshold` | Enable LLM filter when tools exceed this count | Any integer (default: `50`) |
 | | `enable_cache_persistence` | Persist embedding cache to disk | `true` or `false` (default: `true`) |
@@ -458,7 +465,7 @@ async with AnyTool(config=config) as tool_layer:
 
 **Path**: `anytool/config/config_security.json`
 
-**Purpose**: Define security policies with command filtering and access control. When sensitive operations are detected, AnyTool will **prompt for user confirmation at runtime** before execution.
+**Purpose**: Define security policies with command filtering and access control.
 
 **Key Fields**:
 
@@ -469,14 +476,12 @@ async with AnyTool(config=config) as tool_layer:
 | | `allow_file_access` | Enable file system operations | `true` or `false` (default: `true`) |
 | | `blocked_commands` | Platform-specific command blacklist | Object with `common`, `linux`, `darwin`, `windows` arrays |
 | | `sandbox_enabled` | Enable sandboxing for all operations | `true` or `false` (default: `false`) |
-| | `require_user_approval` | Prompt user before sensitive operations | `true` or `false` (default: `false`) |
 | **backend** | `shell`, `mcp`, `gui`, `web` | Per-backend security overrides | Same fields as global, backend-specific |
 
 **Example blocked commands**: `rm -rf`, `shutdown`, `reboot`, `mkfs`, `dd`, `format`, `iptables`
 
 **Behavior**: 
 - Blocked commands are **rejected automatically**
-- When `require_user_approval` is `true`, sensitive operations **pause execution** and prompt for user confirmation
 - Sandbox mode isolates operations in secure environments (E2B sandbox for MCP)
 
 ---
@@ -501,6 +506,7 @@ async with AnyTool(config=config) as tool_layer:
 AnyTool/
 ├── anytool/
 │   ├── __init__.py                       # Package exports
+│   ├── __main__.py                       # CLI entry point (python -m anytool)
 │   ├── tool_layer.py                     # AnyTool main class
 │   │
 │   ├── ⚡ agents/                         # Agent System
@@ -512,6 +518,7 @@ AnyTool/
 │   │       ├── mcp/                      # Model Context Protocol
 │   │       └── web/                      # Web search & browsing
 │   │
+│   ├── 🔧 prompts/                       # Prompt Templates
 │   ├── 🔧 llm/                           # LLM Integration
 │   ├── 🔧 config/                        # Configuration System
 │   ├── 🔧 local_server/                  # GUI Backend Server
@@ -638,6 +645,7 @@ backends/mcp/
 ├── config.py                       # MCP configuration loader
 ├── installer.py                    # MCP server installer
 ├── tool_converter.py               # Convert MCP tools to unified format
+├── tool_cache.py                   # MCP tool cache for offline tool discovery
 └── transport/
     ├── connectors/                 # Multiple transport types
     │   ├── base.py
@@ -665,6 +673,17 @@ backends/web/
 ```
 
 </details>
+
+</details>
+
+<details>
+<summary><b>🔧 prompts/</b> - Prompt Templates</summary>
+
+```
+prompts/
+├── __init__.py
+└── grounding_agent_prompts.py     # Grounding agent system & tool selection prompts
+```
 
 </details>
 

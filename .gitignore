@@ -38,6 +38,10 @@ logs/
 embedding_cache/
 tool_quality/
 
+# MCP tool cache
+mcp_tool_cache.json
+mcp_tool_cache_sanitized.json
+
 # Config files
 anytool/config/config_dev.json
 
